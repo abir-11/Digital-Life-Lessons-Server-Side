@@ -25,7 +25,24 @@ async function run() {
         await client.connect();
 
         const db=client.db('digital_life_lessons_db')
-        const ditialLifeCollection=db.collection('life_lessons')
+        const digitalLifeCollection=db.collection('life_lessons')
+        const userCollection=db.collection('users');
+
+        //users api
+        
+        //life_lessons api
+
+        app.get('/life_lessons',async(req,res)=>{
+
+        })
+
+        app.post('/life_lessons',async(req,res)=>{
+            const card=req.body;
+            card.createAt=new Date();
+            const result =await digitalLifeCollection.insertOne(card);
+            res.send(result);
+        })
+
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
