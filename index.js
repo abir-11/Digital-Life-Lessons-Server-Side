@@ -29,7 +29,19 @@ async function run() {
         const userCollection=db.collection('users');
 
         //users api
-        
+        app.post('/users',async(req,res)=>{
+            const user=req.body;
+            user.role='user';
+            user.isPremium=false;
+            user.createAt=new Date();
+            const email=user.email;
+            const userExists=await userCollection.findOne({email});
+            if(userExists){
+                return res.send({message:'user exists'});
+            }
+            const result=await userCollection.insertOne(user);
+            res.send(result)
+        })
         //life_lessons api
 
         app.get('/life_lessons',async(req,res)=>{
