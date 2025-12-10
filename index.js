@@ -29,6 +29,12 @@ async function run() {
         const userCollection=db.collection('users');
 
         //users api
+        app.get('/users/:email',async(req,res)=>{
+          const email=req.params.email;
+          const query={email};
+          const result=await userCollection.findOne(query);
+          res.send(result);
+        })
         app.post('/users',async(req,res)=>{
             const user=req.body;
             user.role='user';
@@ -45,7 +51,9 @@ async function run() {
         //life_lessons api
 
         app.get('/life_lessons',async(req,res)=>{
-
+          const query={};
+          const result=await digitalLifeCollection.find(query).sort({createAt:-1}).toArray();
+          res.send(result);
         })
 
         app.post('/life_lessons',async(req,res)=>{
