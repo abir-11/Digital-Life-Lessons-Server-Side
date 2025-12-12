@@ -2,7 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const app = express()
 require('dotenv').config();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000
 
 
@@ -24,43 +24,78 @@ async function run() {
         // Connect the client to the server	(optional starting in v4.7)
         await client.connect();
 
-        const db=client.db('digital_life_lessons_db')
-        const digitalLifeCollection=db.collection('life_lessons')
-        const userCollection=db.collection('users');
+        const db = client.db('digital_life_lessons_db')
+        const digitalLifeCollection = db.collection('life_lessons')
+        const userCollection = db.collection('users');
 
         //users api
-        app.get('/users/:email',async(req,res)=>{
-          const email=req.params.email;
-          const query={email};
-          const result=await userCollection.findOne(query);
-          res.send(result);
+        app.get('/users', async (req, res) => {
+            const query = {}
+            const result = await userCollection.find(query).toArray();
+            res.send(result)
         })
-        app.post('/users',async(req,res)=>{
-            const user=req.body;
-            user.role='user';
-            user.isPremium=false;
-            user.createAt=new Date();
-            const email=user.email;
-            const userExists=await userCollection.findOne({email});
-            if(userExists){
-                return res.send({message:'user exists'});
+        app.get('/users/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email };
+            const result = await userCollection.findOne(query);
+            res.send(result);
+        })
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            user.role = 'user';
+            user.isPremium = false;
+            user.createAt = new Date();
+            const email = user.email;
+            const userExists = await userCollection.findOne({ email });
+            if (userExists) {
+                return res.send({ message: 'user exists' });
             }
-            const result=await userCollection.insertOne(user);
+            const result = await userCollection.insertOne(user);
             res.send(result)
         })
         //life_lessons api
-
-        app.get('/life_lessons',async(req,res)=>{
-          const query={};
-          const result=await digitalLifeCollection.find(query).sort({createAt:-1}).toArray();
-          res.send(result);
-        })
-
-        app.post('/life_lessons',async(req,res)=>{
-            const card=req.body;
-            card.createAt=new Date();
-            const result =await digitalLifeCollection.insertOne(card);
+        app.get('/life_lessons', async (req, res) => {
+            const result = await digitalLifeCollection.find().toArray();
             res.send(result);
+        });
+        app.get('/life_lessons', async (req, res) => {
+            const query = {};
+            const result = await digitalLifeCollection.find(query).sort({ createAt: -1 }).toArray();
+            res.send(result);
+        })
+        app.get('/life_lessons/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await digitalLifeCollection.findOne(query)
+            res.send(result)
+
+        })
+        app.get('/life_lessons/:email', async (req, res) => {
+            const email = req.params.email;
+            const count = await digitalLifeCollection.countDocuments({ creatorEmail: email });
+            res.send({ count });
+        });
+
+
+        app.post('/life_lessons', async (req, res) => {
+            const card = req.body;
+            card.createAt = new Date();
+            const result = await digitalLifeCollection.insertOne(card);
+            res.send(result);
+        })
+        app.patch('/life_lessons/:id', async (req, res) => {
+            const id = req.params.id;
+
+            const { like, favorites } = req.body;
+            const query = { _id: new ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    like: like,
+                    favorites: favorites
+                }
+            }
+            const result = await digitalLifeCollection.updateOne(query, updateDoc);
+            res.send(result)
         })
 
         // Send a ping to confirm a successful connection
@@ -68,7 +103,7 @@ async function run() {
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
-       // await client.close();
+        // await client.close();
     }
 }
 run().catch(console.dir);
