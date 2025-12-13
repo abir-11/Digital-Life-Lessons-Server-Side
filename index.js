@@ -116,6 +116,33 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
+        // Get total lesson count by email
+        app.get('/life_lessons/count/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+
+                if (!email) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Email is required"
+                    });
+                }
+
+                const count = await digitalLifeCollection.countDocuments({ email });
+
+                res.send({
+                    success: true,
+                    count: count
+                });
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
 
 
         app.post('/life_lessons', async (req, res) => {
@@ -124,40 +151,100 @@ async function run() {
             const result = await digitalLifeCollection.insertOne(card);
             res.send(result);
         })
+        // app.post('/life_lessons/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     const query={_id:new ObjectId(id)};
+        //     const result = await digitalLifeCollection.insertOne(query);
+        //     res.send(result);
+        // })
+        // PATCH /life_lessons/:id
         app.patch('/life_lessons/:id', async (req, res) => {
             try {
                 const id = req.params.id;
-                const { action, userEmail } = req.body;
+                const { action, userEmail, comment } = req.body;
 
-                if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid ID" });
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: "Invalid ID" });
+                }
 
                 const query = { _id: new ObjectId(id) };
                 const lesson = await digitalLifeCollection.findOne(query);
-                if (!lesson) return res.status(404).send({ message: "Lesson not found" });
+
+                if (!lesson) {
+                    return res.status(404).send({ message: "Lesson not found" });
+                }
 
                 let updateDoc = {};
 
                 if (action === 'like') {
-
                     if (!userEmail) return res.status(400).send({ message: "userEmail is required for like action" });
-
                     const likedUsers = lesson.likeUsers || [];
                     if (likedUsers.includes(userEmail)) {
-
                         updateDoc = {
                             $pull: { likeUsers: userEmail },
                             $set: { like: Math.max((lesson.like || 0) - 1, 0) }
                         };
                     } else {
-
                         updateDoc = {
                             $addToSet: { likeUsers: userEmail },
                             $set: { like: (lesson.like || 0) + 1 }
                         };
                     }
                 } else if (action === 'favorite') {
-                    const newFavorite = lesson.favorites === "Add" ? "Remove" : "Add";
-                    updateDoc = { $set: { favorites: newFavorite } };
+                    if (!userEmail) {
+                        return res.status(400).send({ message: "userEmail is required for favorite" });
+                    }
+
+                    const favoriteUsers = lesson.favoriteUsers || [];
+
+                    // check if user already exists
+                    const userIndex = favoriteUsers.findIndex(user => user.email === userEmail);
+
+                    let newStatus = "";
+
+                    if (userIndex !== -1) {
+                        // already saved → remove user
+                        updateDoc = {
+                            $pull: {
+                                favoriteUsers: { email: userEmail }
+                            },
+                            $inc: {
+                                totalFavorites: -1
+                            }
+                        };
+                        newStatus = "save";
+                    } else {
+                        // not saved → add user
+                        updateDoc = {
+                            $push: {
+                                favoriteUsers: { email: userEmail, lesson: "save" }
+                            },
+                            $inc: {
+                                totalFavorites: +1
+                            }
+                        };
+                        newStatus = "unsave";
+                    }
+
+                    const result = await digitalLifeCollection.updateOne(query, updateDoc);
+                    return res.send({ message: "favorite updated", status: newStatus });
+                } else if (action === 'comment') {
+                    if (!userEmail || !comment) {
+                        return res.status(400).send({ message: "comment & userEmail are required" });
+                    }
+
+                    const newComment = {
+                        userEmail,
+                        comment,
+                        time: new Date()
+                    };
+
+                    // comments array না থাকলে খালি array তৈরি করা
+                    if (!lesson.comments) {
+                        await digitalLifeCollection.updateOne(query, { $set: { comments: [] } });
+                    }
+
+                    updateDoc = { $push: { comments: newComment } };
                 } else {
                     return res.status(400).send({ message: "Invalid action" });
                 }
@@ -171,12 +258,53 @@ async function run() {
             }
         });
 
+        // get comment
+
+        app.get('/life_lessons/:id/comments', async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Invalid ID format"
+                    });
+                }
+
+                const lesson = await digitalLifeCollection.findOne({
+                    _id: new ObjectId(id)
+                }, {
+                    projection: { comments: 1 }
+                });
+
+                if (!lesson) {
+                    return res.status(404).send({
+                        success: false,
+                        message: "Lesson not found"
+                    });
+                }
+
+                res.send({
+                    success: true,
+                    comments: lesson.comments || []
+                });
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
+
         //report collections
         app.post('/report_lessons', async (req, res) => {
             try {
                 const { lessonId, reporterUserId, reportedUserEmail, reason } = req.body;
 
-               
+
                 if (!lessonId || !reporterUserId || !reportedUserEmail || !reason) {
                     return res.status(400).json({
                         success: false,
@@ -192,7 +320,7 @@ async function run() {
                             message: "User not found"
                         });
                     }
-                    reporterUserId = user._id; 
+                    reporterUserId = user._id;
                 }
 
                 // Check if lesson exists
