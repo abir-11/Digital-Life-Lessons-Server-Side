@@ -151,17 +151,12 @@ async function run() {
             const result = await digitalLifeCollection.insertOne(card);
             res.send(result);
         })
-        // app.post('/life_lessons/:id', async (req, res) => {
-        //     const id = req.params.id;
-        //     const query={_id:new ObjectId(id)};
-        //     const result = await digitalLifeCollection.insertOne(query);
-        //     res.send(result);
-        // })
+        
         // PATCH /life_lessons/:id
         app.patch('/life_lessons/:id', async (req, res) => {
             try {
                 const id = req.params.id;
-                const { action, userEmail, comment } = req.body;
+                const { action, photoURL, userEmail, comment } = req.body;
 
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send({ message: "Invalid ID" });
@@ -234,6 +229,7 @@ async function run() {
                     }
 
                     const newComment = {
+                        photoURL,
                         userEmail,
                         comment,
                         time: new Date()
@@ -258,43 +254,37 @@ async function run() {
             }
         });
 
-        // get comment
+        // get limit emotion
 
-        app.get('/life_lessons/:id/comments', async (req, res) => {
+        app.get('/life_lessons/related/:id', async (req, res) => {
             try {
-                const id = req.params.id;
+                const { id } = req.params; 
 
-                if (!ObjectId.isValid(id)) {
-                    return res.status(400).send({
-                        success: false,
-                        message: "Invalid ID format"
-                    });
-                }
-
-                const lesson = await digitalLifeCollection.findOne({
+               
+                const currentLesson = await digitalLifeCollection.findOne({
                     _id: new ObjectId(id)
-                }, {
-                    projection: { comments: 1 }
                 });
 
-                if (!lesson) {
-                    return res.status(404).send({
-                        success: false,
-                        message: "Lesson not found"
-                    });
+                if (!currentLesson) {
+                    return res.status(404).send({ message: "Lesson not found" });
                 }
 
-                res.send({
-                    success: true,
-                    comments: lesson.comments || []
-                });
+                const { emotionalTone } = currentLesson;
+
+               
+                const relatedLessons = await digitalLifeCollection.find({
+                    _id: { $ne: new ObjectId(id) },  
+                    emotionalTone: emotionalTone     
+                })
+                    .sort({ createdAt: -1 })          
+                    .limit(6)
+                    .toArray();
+
+                res.send(relatedLessons);
 
             } catch (error) {
                 console.error(error);
-                res.status(500).send({
-                    success: false,
-                    message: "Internal Server Error"
-                });
+                res.status(500).send({ message: "Internal Server Error" });
             }
         });
 
