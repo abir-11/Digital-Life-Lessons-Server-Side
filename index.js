@@ -116,6 +116,62 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
+        //lessons delete
+        app.delete('/life_lessons/:id', async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await digitalLifeCollection.deleteOne(query);
+            res.send(result);
+        })
+        //favorite data
+        app.get('/favorite/email/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                //console.log(email);
+
+                if (!email) {
+                    return res.status(400).send({ message: "Email is required" });
+                }
+
+                const result = await digitalLifeCollection
+                    .find({ "favoriteUsers.email": email })
+                    .toArray();
+
+
+                res.send(result);
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
+        app.delete('/favorite/remove/:id', async (req, res) => {
+            try {
+                const lessonId = req.params.id;
+                const { email } = req.body; // কোন user এর favorite remove হবে
+
+                if (!email) {
+                    return res.status(400).send({ message: "User email is required" });
+                }
+
+                const query = { _id: new ObjectId(lessonId) };
+                const updateDoc = {
+                    $pull: { favoriteUsers: { email } } // array থেকে remove
+                };
+
+                const result = await digitalLifeCollection.updateOne(query, updateDoc);
+
+                if (result.modifiedCount === 0) {
+                    return res.status(404).send({ message: "Favorite not found or already removed" });
+                }
+
+                res.send({ message: "Favorite removed successfully" });
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
+
+
         // Get total lesson count by email
         app.get('/life_lessons/count/:email', async (req, res) => {
             try {
@@ -151,7 +207,38 @@ async function run() {
             const result = await digitalLifeCollection.insertOne(card);
             res.send(result);
         })
-        
+        app.patch('/update_lessons/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const { privacy, accessLevel } = req.body;
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: "Invalid Id" });
+                }
+
+                const query = { _id: new ObjectId(id) };
+
+                const updateFields = {};
+                if (privacy !== undefined) updateFields.privacy = privacy;
+                if (accessLevel !== undefined) updateFields.accessLevel = accessLevel;
+
+                if (Object.keys(updateFields).length === 0) {
+                    return res.status(400).send({ message: "Nothing to update" });
+                }
+
+                const result = await digitalLifeCollection.updateOne(
+                    query,
+                    { $set: updateFields }
+                );
+
+                res.send(result);
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
+
+
         // PATCH /life_lessons/:id
         app.patch('/life_lessons/:id', async (req, res) => {
             try {
@@ -258,9 +345,9 @@ async function run() {
 
         app.get('/life_lessons/related/:id', async (req, res) => {
             try {
-                const { id } = req.params; 
+                const { id } = req.params;
 
-               
+
                 const currentLesson = await digitalLifeCollection.findOne({
                     _id: new ObjectId(id)
                 });
@@ -271,12 +358,12 @@ async function run() {
 
                 const { emotionalTone } = currentLesson;
 
-               
+
                 const relatedLessons = await digitalLifeCollection.find({
-                    _id: { $ne: new ObjectId(id) },  
-                    emotionalTone: emotionalTone     
+                    _id: { $ne: new ObjectId(id) },
+                    emotionalTone: emotionalTone
                 })
-                    .sort({ createdAt: -1 })          
+                    .sort({ createdAt: -1 })
                     .limit(6)
                     .toArray();
 
