@@ -76,8 +76,46 @@ async function run() {
             }
             const result = await userCollection.insertOne(user);
             res.send(result)
-        })
-        //life_lessons api
+        });
+        app.patch('/users/:email', async (req, res) => {
+            try {
+
+                const email = req.params.email;
+                const { displayName, photoURL } = req.body;
+
+                if (!email) {
+                    return res.status(400).send({
+                        success: false,
+                        message: "Email is required"
+                    });
+                }
+
+                const query = { email };
+                const updateDoc = { $set: {
+                     displayName:displayName
+                     
+                } };
+                if(photoURL){
+                    updateDoc.$set.photoURL=photoURL;
+                }
+
+                const result = await userCollection.updateOne(query, updateDoc);
+
+                res.send({
+                    success: true,
+                    modifiedCount: result.modifiedCount,
+                    message: "Profile updated successfully"
+                });
+
+            } catch (error) {
+                console.error("PATCH error:", error);
+                res.status(500).send({
+                    success: false,
+                    message: "Internal Server Error"
+                });
+            }
+        });
+
 
         app.get('/life_lessons', async (req, res) => {
             const query = {};
