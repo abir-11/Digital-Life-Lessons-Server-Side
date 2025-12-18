@@ -59,7 +59,7 @@ async function run() {
             const result = await userCollection.find(query).toArray();
             res.send(result)
         });
-        
+
         app.get('/users/:email', async (req, res) => {
             const email = req.params.email;
             const query = { email };
@@ -83,7 +83,7 @@ async function run() {
             try {
 
                 const email = req.params.email;
-                const { displayName, photoURL ,role} = req.body;
+                const { displayName, photoURL, role } = req.body;
 
                 if (!email) {
                     return res.status(400).send({
@@ -96,10 +96,13 @@ async function run() {
                 const updateDoc = {
                     $set: {
                         displayName: displayName,
-                        role:role
+
 
                     }
                 };
+                if (role) {
+                    updateDoc.$set.role = role;
+                }
                 if (photoURL) {
                     updateDoc.$set.photoURL = photoURL;
                 }
@@ -120,21 +123,104 @@ async function run() {
                 });
             }
         });
-        app.delete('/users/:email',async(req,res)=>{
-            const email=req.params.email;
-            const  query={email};
-            const result=await userCollection.deleteOne(query);
+        app.delete('/users/:email', async (req, res) => {
+            const email = req.params.email;
+            const query = { email };
+            const result = await userCollection.deleteOne(query);
             res.send(result);
         })
 
 
-      //life lessons
+        //life lessons
+        app.get("/top-contributors", async (req, res) => {
+            try {
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        app.get('/life_lessons', async (req, res) => {
-            const query = {};
-            const result = await digitalLifeCollection.find(query).sort({ createAt: -1 }).toArray();
-            res.send(result);
-        })
+                const contributors = await digitalLifeCollection.aggregate([
+                    {
+                        $match: {
+                            createAt: { $gte: sevenDaysAgo }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: "$email",
+                            lessonCount: { $sum: 1 }
+                        }
+                    },
+                    {
+                        $sort: { lessonCount: -1 }
+                    },
+                    {
+                        $limit: 6
+                    },
+                    {
+                        $lookup: {
+                            from: "users",          
+                            localField: "_id",      
+                            foreignField: "email",  
+                            as: "userInfo"
+                        }
+                    },
+                    {
+                        $unwind: "$userInfo"      
+                    },
+                    {
+                        $project: {
+                            email: "$_id",
+                            displayName: "$userInfo.displayName",
+                            photoURL: "$userInfo.photoURL",
+                            lessonCount: 1,
+                            _id: 0
+                        }
+                    }
+                ]).toArray();
+
+                res.send(contributors);
+            } catch (error) {
+                console.error("Top contributors error:", error);
+                res.status(500).send({ message: "Server error" });
+            }
+        });
+
+
+
+        app.get("/life_lessons", async (req, res) => {
+            try {
+
+                const { searchText, featured, sort, limit = 0, skip = 0 } = req.query;
+
+                let query = {};
+                let sortOption = { createdAt: -1 };
+
+                if (searchText) {
+                    query.title = { $regex: searchText, $options: "i" }; // <-- fix here
+                }
+
+                if (featured === "true") {
+                    query.featured = true;
+                }
+
+                if (sort === "favorites") {
+                    sortOption = { totalFavorites: -1 };
+                }
+
+                const lessons = await digitalLifeCollection
+                    .find(query)
+                    .limit(Number(limit))
+                    .skip(Number(skip))
+                    .sort(sortOption)
+                    .toArray();
+                const count = await digitalLifeCollection.countDocuments()
+
+                res.send({ lessons, total: count });
+            } catch (error) {
+                console.error("Get lessons error:", error);
+                res.status(500).send({ message: "Server error" });
+            }
+        });
+
         // 2. Get single lesson by ID
         app.get('/life_lessons/id/:id', async (req, res) => {
             try {
@@ -168,16 +254,16 @@ async function run() {
             }
         });
         //get aggregate to empliment chat
-        app.get('/life_lessons/contributions-reaction-per-week',async(req,res)=>{
-            const email=req.params.email;
-            const pipeline=[
+        app.get('/life_lessons/contributions-reaction-per-week', async (req, res) => {
+            const email = req.params.email;
+            const pipeline = [
                 {
-                    $match:{
-                        userEmail:email,
+                    $match: {
+                        userEmail: email,
                     }
                 }
             ]
-            const result=await digitalLifeCollection.aggregate(pipeline).toArray();
+            const result = await digitalLifeCollection.aggregate(pipeline).toArray();
             res.send(result);
         })
         //lessons delete
@@ -211,7 +297,7 @@ async function run() {
         app.delete('/favorite/remove/:id', async (req, res) => {
             try {
                 const lessonId = req.params.id;
-                const { email } = req.body; 
+                const { email } = req.body;
 
                 if (!email) {
                     return res.status(400).send({ message: "User email is required" });
@@ -219,7 +305,7 @@ async function run() {
 
                 const query = { _id: new ObjectId(lessonId) };
                 const updateDoc = {
-                    $pull: { favoriteUsers: { email } } 
+                    $pull: { favoriteUsers: { email } }
                 };
 
                 const result = await digitalLifeCollection.updateOne(query, updateDoc);
@@ -307,7 +393,7 @@ async function run() {
         app.patch('/life_lessons/:id', async (req, res) => {
             try {
                 const id = req.params.id;
-                const { action, photoURL, userEmail, comment } = req.body;
+                const { action, photoURL, userEmail, comment, featured } = req.body;
 
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).send({ message: "Invalid ID" });
@@ -392,7 +478,22 @@ async function run() {
                     }
 
                     updateDoc = { $push: { comments: newComment } };
-                } else {
+                }
+                else if (action === "reviewed") {
+                    updateDoc = {
+                        $set: { reviewed: true }
+                    };
+                }
+                else if (action === "featured") {
+                    updateDoc = {
+                        $set: { featured: featured }
+                    };
+                }
+                else if (action === 'flags' || action === 'report') {
+                    updateDoc = { $set: { reported: true } };
+                }
+
+                else {
                     return res.status(400).send({ message: "Invalid action" });
                 }
 
@@ -537,6 +638,13 @@ async function run() {
                     timestamp: new Date(),
                     status: 'pending'
                 };
+                const existingReport = await lessonsReportsCollection.findOne({
+                    lessonId: reportDoc.lessonId,
+                    reportedUserEmail
+                })
+                if (existingReport) {
+                    return res.status(400).json({ message: "Allready exist" });
+                }
 
                 const result = await lessonsReportsCollection.insertOne(reportDoc);
 
@@ -555,9 +663,9 @@ async function run() {
                 });
             }
         });
-        app.get('/report_lessons',async(req,res)=>{
-            const query={}
-            const result=await lessonsReportsCollection.find(query).toArray();
+        app.get('/report_lessons', async (req, res) => {
+            const query = {}
+            const result = await lessonsReportsCollection.find(query).toArray();
             res.send(result)
         })
 
