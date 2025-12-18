@@ -4,6 +4,7 @@ const app = express()
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000
+const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 const admin = require("firebase-admin");
 
@@ -57,7 +58,8 @@ async function run() {
             const query = {}
             const result = await userCollection.find(query).toArray();
             res.send(result)
-        })
+        });
+        
         app.get('/users/:email', async (req, res) => {
             const email = req.params.email;
             const query = { email };
@@ -81,7 +83,7 @@ async function run() {
             try {
 
                 const email = req.params.email;
-                const { displayName, photoURL } = req.body;
+                const { displayName, photoURL ,role} = req.body;
 
                 if (!email) {
                     return res.status(400).send({
@@ -91,12 +93,15 @@ async function run() {
                 }
 
                 const query = { email };
-                const updateDoc = { $set: {
-                     displayName:displayName
-                     
-                } };
-                if(photoURL){
-                    updateDoc.$set.photoURL=photoURL;
+                const updateDoc = {
+                    $set: {
+                        displayName: displayName,
+                        role:role
+
+                    }
+                };
+                if (photoURL) {
+                    updateDoc.$set.photoURL = photoURL;
                 }
 
                 const result = await userCollection.updateOne(query, updateDoc);
@@ -115,7 +120,15 @@ async function run() {
                 });
             }
         });
+        app.delete('/users/:email',async(req,res)=>{
+            const email=req.params.email;
+            const  query={email};
+            const result=await userCollection.deleteOne(query);
+            res.send(result);
+        })
 
+
+      //life lessons
 
         app.get('/life_lessons', async (req, res) => {
             const query = {};
@@ -154,6 +167,19 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
+        //get aggregate to empliment chat
+        app.get('/life_lessons/contributions-reaction-per-week',async(req,res)=>{
+            const email=req.params.email;
+            const pipeline=[
+                {
+                    $match:{
+                        userEmail:email,
+                    }
+                }
+            ]
+            const result=await digitalLifeCollection.aggregate(pipeline).toArray();
+            res.send(result);
+        })
         //lessons delete
         app.delete('/life_lessons/:id', async (req, res) => {
             const id = req.params.id;
@@ -185,7 +211,7 @@ async function run() {
         app.delete('/favorite/remove/:id', async (req, res) => {
             try {
                 const lessonId = req.params.id;
-                const { email } = req.body; // কোন user এর favorite remove হবে
+                const { email } = req.body; 
 
                 if (!email) {
                     return res.status(400).send({ message: "User email is required" });
@@ -193,7 +219,7 @@ async function run() {
 
                 const query = { _id: new ObjectId(lessonId) };
                 const updateDoc = {
-                    $pull: { favoriteUsers: { email } } // array থেকে remove
+                    $pull: { favoriteUsers: { email } } 
                 };
 
                 const result = await digitalLifeCollection.updateOne(query, updateDoc);
@@ -412,7 +438,47 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
+        //payment related apis
+        app.post('/create-checkout-session', async (req, res) => {
+            const paymentInfo = req.body;
 
+            const session = await stripe.checkout.sessions.create({
+                payment_method_types: ['card'],
+                line_items: [
+                    {
+                        price_data: {
+                            currency: 'usd',
+                            product_data: { name: 'Premium Access' },
+                            unit_amount: 1500 * 100,
+                        },
+                        quantity: 1,
+                    },
+                ],
+                mode: 'payment',
+                customer_email: paymentInfo.userEmail,
+
+                success_url: `${process.env.SITE_DOMAIN}/payment-success?email=${paymentInfo.userEmail}`,
+                cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
+            });
+
+            res.send({ url: session.url });
+        });
+        //make-premium
+        app.patch('/make-premium', async (req, res) => {
+            const { email } = req.body;
+
+            const result = await userCollection.updateOne(
+                { email },
+                {
+                    $set: {
+                        isPremium: true,
+                        premiumAt: new Date(),
+                    },
+                }
+            );
+
+            res.send(result);
+        });
 
         //report collections
         app.post('/report_lessons', async (req, res) => {
@@ -489,6 +555,13 @@ async function run() {
                 });
             }
         });
+        app.get('/report_lessons',async(req,res)=>{
+            const query={}
+            const result=await lessonsReportsCollection.find(query).toArray();
+            res.send(result)
+        })
+
+
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
