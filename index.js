@@ -8,7 +8,11 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET);
 
 const admin = require("firebase-admin");
 
-const serviceAccount = require('./digital-life-lessons-firebase-adminsdk.json');
+//const serviceAccount = require('./digital-life-lessons-firebase-adminsdk.json');
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -24,8 +28,8 @@ const verifyFBToken = async (req, res, next) => {
     }
     try {
         const idToken = token.split(' ')[1];
-        const decoded = await admin.auth().verifyFBToken(idToken);
-        console.log('decoded in the token', decoded)
+        const decoded = await admin.auth().verifyIdToken(idToken);;
+        //console.log('decoded in the token', decoded)
         req.decoded_email = decoded.email;
         next();
     }
@@ -47,7 +51,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+       // await client.connect();
 
         const db = client.db('digital_life_lessons_db')
         const digitalLifeCollection = db.collection('life_lessons')
@@ -79,7 +83,7 @@ async function run() {
             const result = await userCollection.insertOne(user);
             res.send(result)
         });
-        app.patch('/users/:email', async (req, res) => {
+        app.patch('/users/:email', verifyFBToken, async (req, res) => {
             try {
 
                 const email = req.params.email;
@@ -123,7 +127,7 @@ async function run() {
                 });
             }
         });
-        app.delete('/users/:email', async (req, res) => {
+        app.delete('/users/:email', verifyFBToken, async (req, res) => {
             const email = req.params.email;
             const query = { email };
             const result = await userCollection.deleteOne(query);
@@ -157,14 +161,14 @@ async function run() {
                     },
                     {
                         $lookup: {
-                            from: "users",          
-                            localField: "_id",      
-                            foreignField: "email",  
+                            from: "users",
+                            localField: "_id",
+                            foreignField: "email",
                             as: "userInfo"
                         }
                     },
                     {
-                        $unwind: "$userInfo"      
+                        $unwind: "$userInfo"
                     },
                     {
                         $project: {
@@ -192,7 +196,7 @@ async function run() {
                 const { searchText, featured, sort, limit = 0, skip = 0 } = req.query;
 
                 let query = {};
-                let sortOption = { createdAt: -1 };
+                let sortOption = { createAt: -1 };
 
                 if (searchText) {
                     query.title = { $regex: searchText, $options: "i" }; // <-- fix here
@@ -267,14 +271,14 @@ async function run() {
             res.send(result);
         })
         //lessons delete
-        app.delete('/life_lessons/:id', async (req, res) => {
+        app.delete('/life_lessons/:id', verifyFBToken, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await digitalLifeCollection.deleteOne(query);
             res.send(result);
         })
         //favorite data
-        app.get('/favorite/email/:email', async (req, res) => {
+        app.get('/favorite/email/:email', verifyFBToken, async (req, res) => {
             try {
                 const email = req.params.email;
                 //console.log(email);
@@ -294,7 +298,7 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
-        app.delete('/favorite/remove/:id', async (req, res) => {
+        app.delete('/favorite/remove/:id', verifyFBToken, async (req, res) => {
             try {
                 const lessonId = req.params.id;
                 const { email } = req.body;
@@ -351,13 +355,13 @@ async function run() {
         });
 
 
-        app.post('/life_lessons', async (req, res) => {
+        app.post('/life_lessons', verifyFBToken, async (req, res) => {
             const card = req.body;
             card.createAt = new Date();
             const result = await digitalLifeCollection.insertOne(card);
             res.send(result);
         })
-        app.patch('/update_lessons/:id', async (req, res) => {
+        app.patch('/update_lessons/:id', verifyFBToken, async (req, res) => {
             try {
                 const id = req.params.id;
                 const { privacy, accessLevel } = req.body;
@@ -429,13 +433,11 @@ async function run() {
 
                     const favoriteUsers = lesson.favoriteUsers || [];
 
-                    // check if user already exists
                     const userIndex = favoriteUsers.findIndex(user => user.email === userEmail);
 
                     let newStatus = "";
 
                     if (userIndex !== -1) {
-                        // already saved → remove user
                         updateDoc = {
                             $pull: {
                                 favoriteUsers: { email: userEmail }
@@ -446,7 +448,6 @@ async function run() {
                         };
                         newStatus = "save";
                     } else {
-                        // not saved → add user
                         updateDoc = {
                             $push: {
                                 favoriteUsers: { email: userEmail, lesson: "save" }
@@ -472,7 +473,6 @@ async function run() {
                         time: new Date()
                     };
 
-                    // comments array না থাকলে খালি array তৈরি করা
                     if (!lesson.comments) {
                         await digitalLifeCollection.updateOne(query, { $set: { comments: [] } });
                     }
@@ -528,7 +528,7 @@ async function run() {
                     _id: { $ne: new ObjectId(id) },
                     emotionalTone: emotionalTone
                 })
-                    .sort({ createdAt: -1 })
+                    .sort({ createAt: -1 })
                     .limit(6)
                     .toArray();
 
@@ -582,7 +582,7 @@ async function run() {
         });
 
         //report collections
-        app.post('/report_lessons', async (req, res) => {
+        app.post('/report_lessons', verifyFBToken, async (req, res) => {
             try {
                 const { lessonId, reporterUserId, reportedUserEmail, reason } = req.body;
 
@@ -663,7 +663,7 @@ async function run() {
                 });
             }
         });
-        app.get('/report_lessons', async (req, res) => {
+        app.get('/report_lessons', verifyFBToken, async (req, res) => {
             const query = {}
             const result = await lessonsReportsCollection.find(query).toArray();
             res.send(result)
@@ -672,8 +672,8 @@ async function run() {
 
 
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
