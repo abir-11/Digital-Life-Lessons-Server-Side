@@ -97,21 +97,20 @@ async function run() {
                 }
 
                 const query = { email };
-                const updateDoc = {
-                    $set: {
-                        displayName: displayName,
-
-
-                    }
-                };
+                const updateDoc = { };
+                if (displayName) {
+                    updateDoc.displayName=displayName;
+                }
                 if (role) {
-                    updateDoc.$set.role = role;
+                    updateDoc.role = role;
                 }
                 if (photoURL) {
-                    updateDoc.$set.photoURL = photoURL;
+                    updateDoc.photoURL = photoURL;
                 }
 
-                const result = await userCollection.updateOne(query, updateDoc);
+                const result = await userCollection.updateOne(query, {
+                    $set:updateDoc
+                });
 
                 res.send({
                     success: true,
